@@ -11,7 +11,7 @@ extern "C" {
 #include "./length.h"
 #include "./array.h"
 #include "./error_costs.h"
-#include "./host.h"
+#include "./endian.h"
 #include "tree_sitter/api.h"
 #include "tree_sitter/parser.h"
 
@@ -40,18 +40,15 @@ typedef struct {
 //
 // This representation is used for small leaf nodes that are not
 // errors, and were not created by an external scanner.
-// The idea behind the layout of this struct is that the `is_inline`
-// bit will fall exactly into the same location as the least significant
-// bit of the pointer in `Subtree` or `MutableSubtree`, respectively.
+// The idea behind the layout of this struct is that, for 64bit pointers,
+// the `is_inline` bit will fall exactly into the same location as the least
+// significant bit of the pointer in `Subtree` or `MutableSubtree`, respectively.
 // Because of alignment, for any valid pointer this will be 0, giving
 // us the opportunity to make use of this bit to signify whether to use
 // the pointer or the inline struct.
+// For 32bit, there is more room left after the pointer, so `is_inline` may also
+// be placed anywhere in that free space (this happens for 32bit big-endian only).
 typedef struct {
-#define SUBTREE_3_BYTES \
-  uint8_t symbol; \
-  uint8_t padding_bytes; \
-  uint8_t size_bytes; \
-
 #define SUBTREE_6_BITS \
   bool visible : 1; \
   bool named : 1; \
@@ -60,6 +57,11 @@ typedef struct {
   bool is_missing : 1; \
   bool is_keyword : 1;
 
+#define SUBTREE_3_BYTES \
+  uint8_t symbol; \
+  uint8_t padding_bytes; \
+  uint8_t size_bytes;
+
 #define SUBTREE_4_BYTES \
   uint8_t padding_columns; \
   uint8_t padding_rows : 4; \
@@ -67,19 +69,11 @@ typedef struct {
   uint16_t parse_state;
 
 #if TS_BIG_ENDIAN
-#if TS_PTR_SIZE == 32
-  SUBTREE_3_BYTES
-  SUBTREE_6_BITS
-  bool unused : 1;
-  bool is_inline : 1;
-  SUBTREE_4_BYTES
-#else
   SUBTREE_4_BYTES
   SUBTREE_3_BYTES
   SUBTREE_6_BITS
   bool unused : 1;
   bool is_inline : 1;
-#endif
 #else
   bool is_inline : 1;
   SUBTREE_6_BITS
